@@ -22,6 +22,7 @@ import java.util.Base64
 import scala.collection.JavaConverters._
 
 import org.apache.kyuubi.KyuubiSQLException
+
 import org.apache.kyuubi.client.KyuubiSyncThriftClient
 import org.apache.kyuubi.config.KyuubiConf
 import org.apache.kyuubi.config.KyuubiConf._
@@ -34,6 +35,7 @@ import org.apache.kyuubi.ha.client.ServiceNodeInfo
 import org.apache.kyuubi.operation.{Operation, OperationHandle}
 import org.apache.kyuubi.operation.log.OperationLog
 import org.apache.kyuubi.service.authentication.InternalSecurityAccessor
+import org.apache.kyuubi.service.TFrontendService.CURRENT_SERVER_CONTEXT
 import org.apache.kyuubi.session.SessionType.SessionType
 import org.apache.kyuubi.shaded.hive.service.rpc.thrift._
 import org.apache.kyuubi.shaded.thrift.transport.TTransportException
@@ -185,8 +187,8 @@ class KyuubiSessionImpl(
             shouldRetry = false
           } catch {
             case e: TTransportException
-                if attempt < maxAttempts && e.getCause.isInstanceOf[java.net.ConnectException] &&
-                  e.getCause.getMessage.contains("Connection refused") =>
+              if attempt < maxAttempts && e.getCause.isInstanceOf[java.net.ConnectException] &&
+                e.getCause.getMessage.contains("Connection refused") =>
               warn(
                 s"Failed to open [${engine.defaultEngineName} $host:$port] after" +
                   s" $attempt/$maxAttempts times, retrying",
@@ -264,6 +266,18 @@ class KyuubiSessionImpl(
             KyuubiSQLException(s"Failed to launch engine for $handle"))
           throw ex
         }
+
+        Option(CURRENT_SERVER_CONTEXT.get()).foreach(ctx => {
+          val errorMsg = "Close session when connection stop"
+          try {
+            if (!ctx.getOutTransport.isOpen &&
+              conf.getOrElse(SESSION_CLOSE_ON_DISCONNECT.key, "true").toBoolean) {
+                throw KyuubiSQLException(errorMsg)
+            }
+          } catch {
+            case e: Exception => throw KyuubiSQLException(errorMsg, e)
+          }
+        })
 
         engineLaunched = true
       }

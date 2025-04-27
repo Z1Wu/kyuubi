@@ -633,6 +633,9 @@ abstract class TFrontendService(name: String)
 
     override def processContext(context: ServerContext, in: TTransport, out: TTransport): Unit = {
       CURRENT_SERVER_CONTEXT.set(context)
+      context match {
+        case ctx : FeServiceServerContext => ctx.setOutTransport(out)
+      }
     }
 
     override def preServe(): Unit = {}
@@ -653,12 +656,19 @@ private[kyuubi] object TFrontendService {
 
   class FeServiceServerContext extends ServerContext {
     private var sessionHandle: SessionHandle = _
+    private var outTransport: TTransport = _
 
     def setSessionHandle(sessionHandle: SessionHandle): Unit = {
       this.sessionHandle = sessionHandle
     }
 
+    def setOutTransport(out: TTransport): Unit = {
+      this.outTransport = out
+    }
+
     def getSessionHandle: SessionHandle = sessionHandle
+
+    def getOutTransport: TTransport = outTransport
 
     override def unwrap[T](aClass: Class[T]): T = null.asInstanceOf[T]
 
